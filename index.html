@@ -339,6 +339,15 @@ textarea{resize:vertical;min-height:60px}
 .pin-title{font-size:15px;font-weight:600;margin-bottom:4px}
 .pin-sub{font-size:12px;color:var(--text3);margin-bottom:18px}
 
+
+/* ── Sync ── */
+#sync-bar{position:fixed;bottom:12px;right:12px;background:#1e293b;color:#fff;font-size:11px;font-family:'DM Mono',monospace;padding:6px 12px;border-radius:20px;display:none;align-items:center;gap:6px;z-index:7000;box-shadow:0 4px 16px rgba(0,0,0,.2)}
+#sync-bar.show{display:flex}
+.sync-dot{width:6px;height:6px;border-radius:50%;background:#4ade80;flex-shrink:0}
+.sync-dot.err{background:#f87171}
+.sync-dot.spin{background:#60a5fa;animation:spin-dot .8s linear infinite}
+@keyframes spin-dot{0%{opacity:1}50%{opacity:.2}100%{opacity:1}}
+
 </style>
 
 <style>
@@ -676,8 +685,52 @@ function svgIcon(name,size){
 const TURNOS=[{id:'manha',label:'Manhã',icon:'ti-sun'},{id:'tarde',label:'Tarde',icon:'ti-moon'}];
 function today(){return new Date().toISOString().slice(0,10)}
 function nowStr(){return new Date().toLocaleString('pt-BR')}
+// ── Supabase config ──
+const _SB_URL='https://spnorjlautcgqomhvtdz.supabase.co';
+const _SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNwbm9yamxhdXRjZ3FvbWh2dGR6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTMzMDksImV4cCI6MjA5NTc4OTMwOX0.UFpMHeiPV4LwyzBVDcZPvBayrVC77_OcIz6Z8ZmXvGs';
+const _SB_H={'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY,'Content-Type':'application/json'};
+
 function load(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch{return d}}
-function save(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}
+
+function save(k,v){
+  try{localStorage.setItem(k,JSON.stringify(v));}catch{}
+  // Push to Supabase in background
+  fetch(_SB_URL+'/rest/v1/galvpanel_data',{
+    method:'POST',
+    headers:{..._SB_H,'Prefer':'resolution=merge-duplicates'},
+    body:JSON.stringify({chave:k,valor:v,updated_at:new Date().toISOString()})
+  }).catch(()=>{});
+}
+
+function showSync(msg,type){
+  const bar=document.getElementById('sync-bar');
+  const dot=document.getElementById('sync-dot');
+  const txt=document.getElementById('sync-msg');
+  if(!bar)return;
+  bar.classList.add('show');
+  dot.className='sync-dot'+(type==='load'?' spin':type==='err'?' err':'');
+  txt.textContent=msg;
+  if(type==='ok'||type==='err')setTimeout(()=>bar.classList.remove('show'),2500);
+}
+
+async function syncFromSupabase(){
+  showSync('Sincronizando...',  'load');
+  try{
+    const res=await fetch(_SB_URL+'/rest/v1/galvpanel_data?select=chave,valor',{headers:_SB_H});
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    const rows=await res.json();
+    let changed=false;
+    rows.forEach(r=>{
+      const remote=JSON.stringify(r.valor);
+      if(localStorage.getItem(r.chave)!==remote){localStorage.setItem(r.chave,remote);changed=true;}
+    });
+    showSync('Sincronizado ✓','ok');
+    return changed;
+  }catch(e){
+    showSync('Sem conexão — dados locais','err');
+    return false;
+  }
+}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,5)}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 
@@ -1761,9 +1814,33 @@ function renderCalendario(){
 }
 
 // ─── INIT ───
-renderReforcos();
-switchTab('tanques');
+async function initApp(){
+  const changed = await syncFromSupabase();
+  if(changed){
+    // Re-load all data vars from localStorage (now has fresh Supabase data)
+    tanques=load('galv_tanques',null);
+    if(!tanques||tanques.length===0){
+      tanques=TANQUES_INICIAIS.map(t=>({id:uid(),nome:t.nome,tipo:t.tipo,desc:t.desc||'',cor:t.cor||'#4f8fff',volume:0,componentes:[],montagem:{obs:'',passos:[]},params:PARAMS_PADRAO.map(p=>({id:uid(),nome:p.nome,unidade:p.unidade,min:p.min,max:p.max})),log:[]}));
+      save('galv_tanques',tanques);
+    }
+    eventos=load('galv_eventos',[]);
+    reforcos=load('galv_reforcos',[]);
+    tarefas_cfg=load('galv_tarefas',null);
+    processos=load('galv_processos',null);
+    estoque=load('galv_estoque',null);
+    checks=load('galv_checks_'+today(),{});
+    if(!tarefas_cfg){tarefas_cfg={manha:[],tarde:[]};save('galv_tarefas',tarefas_cfg);}
+    if(!estoque){estoque=ESTOQUE_INICIAL.map(e=>({id:uid(),...e}));save('galv_estoque',estoque);}
+    if(!processos){processos=PROCESSOS_INICIAIS.map(p=>({id:uid(),nome:p.nome,desc:p.desc,metodos:p.metodos.map(m=>({id:uid(),...m}))}));save('galv_processos',processos);}
+  }
+  renderReforcos();
+  switchTab('tanques');
+}
+initApp();
 
 </script>
+
+<div id="sync-bar"><div class="sync-dot" id="sync-dot"></div><span id="sync-msg">Sincronizando...</span></div>
+
 </body>
 </html>
