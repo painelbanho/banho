@@ -596,6 +596,10 @@ textarea{resize:vertical;min-height:60px}
 
 
 // ─── AUTH ───
+// Senha do painel: Banho@2025  |  PIN dos reforços: 1809
+const _SH='1fe37c6127075f17bf791045e07e1d1b4a5452c568f5db43073c803938d3a4c4';
+const _PH='4fc779c823fd37ed61f66a6ae37c9dffed06bb295f3902d2fa9d485aa741a724';
+
 async function sha256(str){
   const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(str));
   return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
@@ -604,43 +608,33 @@ async function sha256(str){
 let _pinPendingMetal=null;
 
 async function authSubmit(){
-  const val=document.getElementById('auth-input').value.trim();
+  const val=document.getElementById('auth-input').value;
   const errEl=document.getElementById('auth-err');
   errEl.textContent='';
-  if(!val){errEl.textContent='Digite a senha.';return;}
-  const stored=localStorage.getItem('galv_auth_hash');
-  if(!stored){
-    // Primeiro acesso: criar senha
-    if(val.length<4){errEl.textContent='Mínimo 4 caracteres.';return;}
-    localStorage.setItem('galv_auth_hash',await sha256(val));
-    if(!localStorage.getItem('galv_pin_hash'))
-      localStorage.setItem('galv_pin_hash',await sha256('1234'));
-    unlock();
+  if(!val)return;
+  if(await sha256(val)===_SH){
+    sessionStorage.setItem('galv_session','1');
+    document.getElementById('auth-overlay').style.display='none';
   } else {
-    if(await sha256(val)===stored){unlock();}
-    else{errEl.textContent='Senha incorreta.';document.getElementById('auth-input').value='';}
+    errEl.textContent='Senha incorreta.';
+    document.getElementById('auth-input').value='';
+    document.getElementById('auth-input').focus();
   }
-}
-
-function unlock(){
-  sessionStorage.setItem('galv_session','1');
-  document.getElementById('auth-overlay').style.display='none';
 }
 
 async function pinSubmit(){
   const val=document.getElementById('pin-input').value;
   const errEl=document.getElementById('pin-err');
   errEl.textContent='';
-  if(!val){errEl.textContent='Digite o PIN.';return;}
-  const stored=localStorage.getItem('galv_pin_hash');
-  if(!stored){errEl.textContent='PIN não configurado.';return;}
-  if(await sha256(val)===stored){
+  if(!val)return;
+  if(await sha256(val)===_PH){
     const metal=_pinPendingMetal;
     closePinOverlay();
     if(metal)toggleMetalForm(metal);
   } else {
     errEl.textContent='PIN incorreto.';
     document.getElementById('pin-input').value='';
+    document.getElementById('pin-input').focus();
   }
 }
 
@@ -656,16 +650,9 @@ function closePinOverlay(){
   _pinPendingMetal=null;
 }
 
-// Init auth check
 (function(){
-  const stored=localStorage.getItem('galv_auth_hash');
-  if(!stored){
-    document.getElementById('auth-sub').textContent='Primeiro acesso — crie sua senha';
-    document.getElementById('auth-btn-txt').textContent='Criar senha';
-    document.getElementById('auth-hint').textContent='O PIN padrão para reforços de metais será: 1234\nVocê pode alterar pelo console do navegador.';
-  } else if(sessionStorage.getItem('galv_session')==='1'){
+  if(sessionStorage.getItem('galv_session')==='1')
     document.getElementById('auth-overlay').style.display='none';
-  }
   setTimeout(()=>{const el=document.getElementById('auth-input');if(el)el.focus();},150);
 })();
 
