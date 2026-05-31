@@ -929,20 +929,70 @@ function saveTanque(){
   renderTanqueList();
 }
 
+let _dragId=null,_dragOver=null;
+
 function renderTanqueList(){
   const layout=document.getElementById('tanque-layout'),empty=document.getElementById('tanque-empty');
   if(!tanques.length){layout.style.display='none';empty.innerHTML='<div style="color:var(--text3);font-size:13px;padding:60px;text-align:center">Nenhum tanque cadastrado.</div>';return;}
   layout.style.display='grid';empty.innerHTML='';
+  const SVG_GRIP='<svg viewBox="0 0 24 24" width="14" height="14" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>';
   document.getElementById('tanque-list').innerHTML=tanques.map(t=>`
-    <div class="tanque-row${tanqueAtivo===t.id?' active':''}" onclick="selectTanque('${t.id}')">
+    <div class="tanque-row${tanqueAtivo===t.id?' active':''}"
+      draggable="true"
+      data-id="${t.id}"
+      ondragstart="dragStart(event,'${t.id}')"
+      ondragover="dragOver(event,'${t.id}')"
+      ondragleave="dragLeave(event)"
+      ondrop="dragDrop(event,'${t.id}')"
+      ondragend="dragEnd()"
+      onclick="selectTanque('${t.id}')">
       <div style="display:flex;align-items:center;gap:9px;min-width:0">
-        <span style="width:9px;height:9px;border-radius:50%;background:${t.cor||'var(--accent)'};flex-shrink:0;display:inline-block"></span>
-        <div style="min-width:0"><div class="tanque-nome">${esc(t.nome)}</div></div>
+        <span style="color:var(--text3);cursor:grab;flex-shrink:0;display:flex;touch-action:none">${SVG_GRIP}</span>
+        <span style="width:8px;height:8px;border-radius:50%;background:${t.cor||'var(--accent)'};flex-shrink:0;display:inline-block"></span>
+        <div class="tanque-nome" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.nome)}</div>
       </div>
-      <span class="ti-icon" style="width:13px;height:13px;flex-shrink:0;color:var(--text3)"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><polyline points="9 18 15 12 9 6"/></svg></span>
+      <span style="width:13px;height:13px;flex-shrink:0;color:var(--text3)"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><polyline points="9 18 15 12 9 6"/></svg></span>
     </div>`).join('');
   if(tanqueAtivo)renderTanqueDetail(tanqueAtivo);
   else document.getElementById('tanque-detail-area').innerHTML='<div style="color:var(--text3);font-size:13px;padding:40px 0;text-align:center">Selecione um tanque</div>';
+}
+
+function dragStart(e,id){
+  _dragId=id;
+  e.dataTransfer.effectAllowed='move';
+  e.currentTarget.style.opacity='.4';
+}
+function dragOver(e,id){
+  e.preventDefault();
+  e.dataTransfer.dropEffect='move';
+  if(id===_dragId)return;
+  if(_dragOver!==id){
+    _dragOver=id;
+    document.querySelectorAll('.tanque-row').forEach(el=>{
+      el.style.borderTop=el.dataset.id===id?'2px solid var(--accent)':'';
+    });
+  }
+}
+function dragLeave(e){
+  if(!e.currentTarget.contains(e.relatedTarget))
+    e.currentTarget.style.borderTop='';
+}
+function dragDrop(e,targetId){
+  e.preventDefault();
+  if(_dragId===targetId)return;
+  const fromIdx=tanques.findIndex(t=>t.id===_dragId);
+  const toIdx=tanques.findIndex(t=>t.id===targetId);
+  if(fromIdx<0||toIdx<0)return;
+  const [moved]=tanques.splice(fromIdx,1);
+  tanques.splice(toIdx,0,moved);
+  save('galv_tanques',tanques);
+  renderTanqueList();
+}
+function dragEnd(){
+  _dragId=null;_dragOver=null;
+  document.querySelectorAll('.tanque-row').forEach(el=>{
+    el.style.opacity='';el.style.borderTop='';
+  });
 }
 
 function selectTanque(id){tanqueAtivo=id;if(!innerTabAtivo[id])innerTabAtivo[id]='composicoes';renderTanqueList();}
