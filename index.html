@@ -436,7 +436,6 @@ textarea{resize:vertical;min-height:60px}
   <button class="tab" onclick="switchTab('processos')"><span class="ti-icon"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></span></i><span>Processos</span></button>
   <button class="tab" onclick="switchTab('estoque')"><span class="ti-icon"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M3.27 6.96L12 12.01l8.73-5.05"/><line x1="6.5" y1="5.25" x2="17.5" y2="11.75"/></svg></span></i><span>Estoque</span></button>
   <button class="tab" onclick="switchTab('reforcos')"><span class="ti-icon"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="currentColor" stroke="none"/></svg></span><span>Reforços</span></button>
-  <button class="tab" onclick="switchTab('reforcos')"><span class="ti-icon"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="currentColor" stroke="none"/></svg></span><span>Reforços</span></button>
   <button class="tab" onclick="switchTab('calendario')"><span class="ti-icon"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg></span></i><span>Calendário</span></button>
 </div>
 
@@ -561,10 +560,6 @@ textarea{resize:vertical;min-height:60px}
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px" id="reforcos-grid"></div>
 </div>
 
-<div id="sec-reforcos" class="section">
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px" id="reforcos-grid"></div>
-</div>
-
 </div><!-- /main -->
 
 <!-- MODAL NOVO EVENTO -->
@@ -622,6 +617,12 @@ function svgIcon(name,size){
   const st=size?` style="width:${size}px;height:${size}px"`:'';
   return `<span class="ti-icon"${st}><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none">${paths}</svg></span>`;
 }
+// ─── SUPABASE (declarado aqui para uso no save) ───
+const _SB_URL='https://spnorjlautcgqomhvtdz.supabase.co';
+const _SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNwbm9yamxhdXRjZ3FvbWh2dGR6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTMzMDksImV4cCI6MjA5NTc4OTMwOX0.UFpMHeiPV4LwyzBVDcZPvBayrVC77_OcIz6Z8ZmXvGs';
+const _SB_H={'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY,'Content-Type':'application/json'};
+const _DB_KEYS=['galv_tanques','galv_tarefas','galv_processos','galv_estoque','galv_reforcos','galv_eventos'];
+
 // ─── UTILS ───
 const TURNOS=[{id:'manha',label:'Manhã',icon:'ti-sun'},{id:'tarde',label:'Tarde',icon:'ti-moon'}];
 function today(){return new Date().toISOString().slice(0,10)}
@@ -1587,11 +1588,7 @@ function openPinOverlay(id){_pinMetal=id;document.getElementById('pin-input').va
 function closePinOverlay(){document.getElementById('pin-overlay').classList.remove('open');_pinMetal=null;}
 (function(){if(sessionStorage.getItem('galv_session')==='1')document.getElementById('auth-overlay').style.display='none';setTimeout(()=>{const e=document.getElementById('auth-input');if(e)e.focus();},150);})();
 
-// ─── SUPABASE ───
-const _SB_URL='https://spnorjlautcgqomhvtdz.supabase.co';
-const _SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNwbm9yamxhdXRjZ3FvbWh2dGR6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTMzMDksImV4cCI6MjA5NTc4OTMwOX0.UFpMHeiPV4LwyzBVDcZPvBayrVC77_OcIz6Z8ZmXvGs';
-const _SB_H={'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY,'Content-Type':'application/json'};
-const _DB_KEYS=['galv_tanques','galv_tarefas','galv_processos','galv_estoque','galv_reforcos','galv_eventos'];
+// ─── SUPABASE (já declarado no início do script) ───
 
 function showSync(msg,type){
   const bar=document.getElementById('sync-bar'),dot=document.getElementById('sync-dot'),txt=document.getElementById('sync-msg');
@@ -1776,7 +1773,7 @@ function dragEnd(){_dragId=null;_dragOver=null;document.querySelectorAll('.tanqu
 // ─── INIT ───
 renderTarefas();
 renderReforcos();
-switchTab('tarefas');
+switchTab('tanques');
 
 </script>
 </body>
