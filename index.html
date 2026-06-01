@@ -560,6 +560,10 @@ textarea{resize:vertical;min-height:60px}
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px" id="reforcos-grid"></div>
 </div>
 
+<div id="sec-reforcos" class="section">
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px" id="reforcos-grid"></div>
+</div>
+
 </div><!-- /main -->
 
 <!-- MODAL NOVO EVENTO -->
@@ -617,21 +621,25 @@ function svgIcon(name,size){
   const st=size?` style="width:${size}px;height:${size}px"`:'';
   return `<span class="ti-icon"${st}><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none">${paths}</svg></span>`;
 }
-// ─── SUPABASE (declarado aqui para uso no save) ───
-const _SB_URL='https://spnorjlautcgqomhvtdz.supabase.co';
-const _SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNwbm9yamxhdXRjZ3FvbWh2dGR6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTMzMDksImV4cCI6MjA5NTc4OTMwOX0.UFpMHeiPV4LwyzBVDcZPvBayrVC77_OcIz6Z8ZmXvGs';
-const _SB_H={'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY,'Content-Type':'application/json'};
-const _DB_KEYS=['galv_tanques','galv_tarefas','galv_processos','galv_estoque','galv_reforcos','galv_eventos'];
-
 // ─── UTILS ───
 const TURNOS=[{id:'manha',label:'Manhã',icon:'ti-sun'},{id:'tarde',label:'Tarde',icon:'ti-moon'}];
 function today(){return new Date().toISOString().slice(0,10)}
 function nowStr(){return new Date().toLocaleString('pt-BR')}
 function load(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch{return d}}
+
 function save(k,v){
-  const ts=Date.now();
-  try{localStorage.setItem(k,JSON.stringify(v));localStorage.setItem('_ts_'+k,ts);}catch{}
-  fetch(_SB_URL+'/rest/v1/galvpanel_data',{method:'POST',headers:{..._SB_H,'Prefer':'resolution=merge-duplicates'},body:JSON.stringify({chave:k,valor:v,updated_at:new Date(ts).toISOString()})}).catch(()=>{});
+  try{localStorage.setItem(k,JSON.stringify(v));}catch{}
+  // Salva no Supabase com retry
+  _sbSave(k,v,0);
+}
+function _sbSave(k,v,retry){
+  fetch(_SB_URL+'/rest/v1/galvpanel_data',{
+    method:'POST',
+    headers:{..._SB_H,'Prefer':'resolution=merge-duplicates'},
+    body:JSON.stringify({chave:k,valor:v,updated_at:new Date().toISOString()})
+  }).catch(()=>{
+    if(retry<3)setTimeout(()=>_sbSave(k,v,retry+1),(retry+1)*3000);
+  });
 }
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,5)}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
@@ -1572,102 +1580,105 @@ async function sha256(s){const b=await crypto.subtle.digest('SHA-256',new TextEn
 let _pinMetal=null;
 async function authSubmit(){
   const v=document.getElementById('auth-input').value;
-  document.getElementById('auth-err').textContent='';
+  const _ae=document.getElementById('auth-err');if(_ae)_ae.textContent='';
   if(!v)return;
   if(await sha256(v)===_SH){sessionStorage.setItem('galv_session','1');document.getElementById('auth-overlay').style.display='none';}
   else{document.getElementById('auth-err').textContent='Senha incorreta.';document.getElementById('auth-input').value='';document.getElementById('auth-input').focus();}
 }
 async function pinSubmit(){
   const v=document.getElementById('pin-input').value;
-  document.getElementById('pin-err').textContent='';
+  const _pe=document.getElementById('pin-err');if(_pe)_pe.textContent='';
   if(!v)return;
   if(await sha256(v)===_PH){const m=_pinMetal;closePinOverlay();if(m)toggleMetalForm(m);}
-  else{document.getElementById('pin-err').textContent='PIN incorreto.';document.getElementById('pin-input').value='';document.getElementById('pin-input').focus();}
+  else{if(_pe)_pe.textContent='PIN incorreto.';const _pi2=document.getElementById('pin-input');if(_pi2){_pi2.value='';_pi2.focus();}}
 }
-function openPinOverlay(id){_pinMetal=id;document.getElementById('pin-input').value='';document.getElementById('pin-err').textContent='';document.getElementById('pin-overlay').classList.add('open');setTimeout(()=>document.getElementById('pin-input').focus(),100);}
-function closePinOverlay(){document.getElementById('pin-overlay').classList.remove('open');_pinMetal=null;}
-(function(){if(sessionStorage.getItem('galv_session')==='1')document.getElementById('auth-overlay').style.display='none';setTimeout(()=>{const e=document.getElementById('auth-input');if(e)e.focus();},150);})();
+function openPinOverlay(id){
+  _pinMetal=id;
+  const pi=document.getElementById('pin-input');
+  const pe=document.getElementById('pin-err');
+  const po=document.getElementById('pin-overlay');
+  if(pi)pi.value='';if(pe)pe.textContent='';
+  if(po)po.classList.add('open');
+  setTimeout(()=>{const e=document.getElementById('pin-input');if(e)e.focus();},100);
+}
+function closePinOverlay(){const po=document.getElementById('pin-overlay');if(po)po.classList.remove('open');_pinMetal=null;}
+(function(){
+  const ov=document.getElementById('auth-overlay');
+  const inp=document.getElementById('auth-input');
+  if(ov&&sessionStorage.getItem('galv_session')==='1')ov.style.display='none';
+  if(inp)setTimeout(()=>inp.focus(),150);
+})();
 
-// ─── SUPABASE (já declarado no início do script) ───
+// ─── SUPABASE ───
+const _SB_URL='https://spnorjlautcgqomhvtdz.supabase.co';
+const _SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNwbm9yamxhdXRjZ3FvbWh2dGR6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTMzMDksImV4cCI6MjA5NTc4OTMwOX0.UFpMHeiPV4LwyzBVDcZPvBayrVC77_OcIz6Z8ZmXvGs';
+const _SB_H={'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY,'Content-Type':'application/json'};
+const _DB_KEYS=['galv_tanques','galv_tarefas','galv_processos','galv_estoque','galv_reforcos','galv_eventos'];
 
-function showSync(msg,type){
-  const bar=document.getElementById('sync-bar'),dot=document.getElementById('sync-dot'),txt=document.getElementById('sync-msg');
-  if(!bar)return;bar.classList.add('show');
-  dot.className='sync-dot'+(type==='load'?' spin':type==='err'?' err':'');
+// ── save: localStorage (cache imediato) + Supabase (fonte de verdade) ──
+function save(k,v){
+  try{localStorage.setItem(k,JSON.stringify(v));}catch{}
+  _sbPush(k,v,0);
+}
+let _domReady=false;
+document.addEventListener('DOMContentLoaded',()=>{_domReady=true;});
+
+function _syncUI(msg,type){
+  if(!_domReady)return;
+  const bar=document.getElementById('sync-bar');
+  const dot=document.getElementById('sync-dot');
+  const txt=document.getElementById('sync-msg');
+  if(!bar||!dot||!txt)return;
+  bar.classList.add('show');
+  dot.className='sync-dot'+(type==='spin'?' spin':type==='err'?' err':'');
   txt.textContent=msg;
-  if(type==='ok'||type==='err')setTimeout(()=>bar.classList.remove('show'),2500);
+  if(type==='ok'||type==='err')setTimeout(()=>bar&&bar.classList.remove('show'),2500);
 }
 
-// Aplica dado remoto no localStorage e re-renderiza a tela correspondente
-function applyRemoteRow(chave,valor,updated_at){
-  const remoteTs=new Date(updated_at).getTime();
-  const localTs=parseInt(localStorage.getItem('_ts_'+chave)||'0');
-  if(remoteTs<=localTs)return false; // já temos dado mais novo
-  localStorage.setItem(chave,JSON.stringify(valor));
-  localStorage.setItem('_ts_'+chave,remoteTs);
-  // Re-carrega variável em memória e re-renderiza
-  if(chave==='galv_tanques'){tanques=valor||[];renderTanqueList();}
-  else if(chave==='galv_tarefas'){tarefas_cfg=valor||{};renderTarefas();}
-  else if(chave==='galv_processos'){processos=valor||[];renderProcessos();}
-  else if(chave==='galv_estoque'){estoque=valor||[];renderEstoque();}
-  else if(chave==='galv_reforcos'){reforcos=valor||[];renderReforcos();}
-  else if(chave==='galv_eventos'){eventos=valor||[];renderCalendario();}
-  else if(chave.startsWith('galv_checks_')){checks=valor||{};renderTarefas();}
-  return true;
-}
-
-async function syncFromSupabase(){
-  showSync('Sincronizando...','load');
+async function _sbPush(k,v,attempt){
   try{
-    const res=await fetch(_SB_URL+'/rest/v1/galvpanel_data?select=chave,valor,updated_at',{headers:_SB_H});
+    _syncUI('Salvando...','spin');
+    const r=await fetch(_SB_URL+'/rest/v1/galvpanel_data',{
+      method:'POST',
+      headers:{..._SB_H,'Prefer':'resolution=merge-duplicates'},
+      body:JSON.stringify({chave:k,valor:v,updated_at:new Date().toISOString()})
+    });
+    if(r.ok||r.status===201||r.status===200){
+      _syncUI('Salvo ✓','ok');
+    } else throw new Error('HTTP '+r.status);
+  }catch(e){
+    if(attempt<3){
+      _syncUI('Tentando novamente...','err');
+      setTimeout(()=>_sbPush(k,v,attempt+1),(attempt+1)*2000);
+    } else {
+      _syncUI('Erro ao salvar!','err');
+      console.error('Supabase save failed:',k,e);
+    }
+  }
+}
+
+// ── load: cache local (rápido), Supabase carrega no initApp ──
+function load(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch{return d;}}
+
+// ── initApp: busca tudo do Supabase, popula variáveis, renderiza ──
+async function _loadFromSupabase(){
+  try{
+    _syncUI('Carregando dados...','spin');
+    const res=await fetch(_SB_URL+'/rest/v1/galvpanel_data?select=chave,valor',{headers:_SB_H});
     if(!res.ok)throw new Error('HTTP '+res.status);
     const rows=await res.json();
-    const sbKeys=new Set();
-    rows.forEach(r=>{sbKeys.add(r.chave);applyRemoteRow(r.chave,r.valor,r.updated_at);});
-    // Envia dados locais que o Supabase ainda não tem
-    [..._DB_KEYS,'galv_checks_'+today()].forEach(k=>{
-      if(!sbKeys.has(k)){const v=localStorage.getItem(k);if(v)fetch(_SB_URL+'/rest/v1/galvpanel_data',{method:'POST',headers:{..._SB_H,'Prefer':'resolution=merge-duplicates'},body:JSON.stringify({chave:k,valor:JSON.parse(v),updated_at:new Date().toISOString()})}).catch(()=>{});}
+    const remote={};
+    rows.forEach(r=>{
+      remote[r.chave]=r.valor;
+      try{localStorage.setItem(r.chave,JSON.stringify(r.valor));}catch{}
     });
-    showSync('Sincronizado ✓','ok');
-  }catch(e){showSync('Offline — dados locais','err');}
-}
-
-// ─── REALTIME (WebSocket Supabase) ───
-let _rtChannel=null;
-function startRealtime(){
-  if(_rtChannel)return; // já conectado
-  const wsUrl=_SB_URL.replace('https://','wss://')+'/realtime/v1/websocket?apikey='+_SB_KEY+'&vsn=1.0.0';
-  const ws=new WebSocket(wsUrl);
-  let _hbInterval=null;
-
-  ws.onopen=()=>{
-    // Autenticar e subscrever à tabela galvpanel_data
-    ws.send(JSON.stringify({topic:'realtime:public:galvpanel_data',event:'phx_join',payload:{},ref:'1'}));
-    _hbInterval=setInterval(()=>{ws.send(JSON.stringify({topic:'phoenix',event:'heartbeat',payload:{},ref:'hb'}));},25000);
-    showSync('Tempo real ativo','ok');
-  };
-
-  ws.onmessage=(e)=>{
-    try{
-      const msg=JSON.parse(e.data);
-      const pay=msg.payload;
-      if(!pay||!pay.data)return;
-      const rec=pay.data.record||pay.data.new;
-      if(!rec||!rec.chave)return;
-      const changed=applyRemoteRow(rec.chave,rec.valor,rec.updated_at);
-      if(changed)showSync('Atualizado por outro acesso','ok');
-    }catch{}
-  };
-
-  ws.onerror=()=>{showSync('Erro realtime','err');};
-  ws.onclose=()=>{
-    _rtChannel=null;
-    clearInterval(_hbInterval);
-    // Reconecta em 5s
-    setTimeout(startRealtime,5000);
-  };
-
-  _rtChannel=ws;
+    _syncUI('Pronto ✓','ok');
+    return remote;
+  }catch(e){
+    _syncUI('Offline — dados locais','err');
+    console.warn('Supabase offline, using localStorage',e);
+    return null;
+  }
 }
 
 // ─── TAREFAS (Manhã/Tarde) ───
@@ -1824,8 +1835,7 @@ function dragEnd(){_dragId=null;_dragOver=null;document.querySelectorAll('.tanqu
 // ─── INIT ───
 renderTarefas();
 renderReforcos();
-switchTab('tanques');
-syncFromSupabase().then(()=>startRealtime());
+switchTab('tarefas');
 
 </script>
 </body>
