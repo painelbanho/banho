@@ -1597,26 +1597,77 @@ function showSync(msg,type){
   txt.textContent=msg;
   if(type==='ok'||type==='err')setTimeout(()=>bar.classList.remove('show'),2500);
 }
+
+// Aplica dado remoto no localStorage e re-renderiza a tela correspondente
+function applyRemoteRow(chave,valor,updated_at){
+  const remoteTs=new Date(updated_at).getTime();
+  const localTs=parseInt(localStorage.getItem('_ts_'+chave)||'0');
+  if(remoteTs<=localTs)return false; // já temos dado mais novo
+  localStorage.setItem(chave,JSON.stringify(valor));
+  localStorage.setItem('_ts_'+chave,remoteTs);
+  // Re-carrega variável em memória e re-renderiza
+  if(chave==='galv_tanques'){tanques=valor||[];renderTanqueList();}
+  else if(chave==='galv_tarefas'){tarefas_cfg=valor||{};renderTarefas();}
+  else if(chave==='galv_processos'){processos=valor||[];renderProcessos();}
+  else if(chave==='galv_estoque'){estoque=valor||[];renderEstoque();}
+  else if(chave==='galv_reforcos'){reforcos=valor||[];renderReforcos();}
+  else if(chave==='galv_eventos'){eventos=valor||[];renderCalendario();}
+  else if(chave.startsWith('galv_checks_')){checks=valor||{};renderTarefas();}
+  return true;
+}
+
 async function syncFromSupabase(){
   showSync('Sincronizando...','load');
   try{
     const res=await fetch(_SB_URL+'/rest/v1/galvpanel_data?select=chave,valor,updated_at',{headers:_SB_H});
     if(!res.ok)throw new Error('HTTP '+res.status);
     const rows=await res.json();
-    let changed=false;
     const sbKeys=new Set();
-    rows.forEach(r=>{
-      sbKeys.add(r.chave);
-      const remoteTs=new Date(r.updated_at).getTime();
-      const localTs=parseInt(localStorage.getItem('_ts_'+r.chave)||'0');
-      if(remoteTs>localTs){localStorage.setItem(r.chave,JSON.stringify(r.valor));localStorage.setItem('_ts_'+r.chave,remoteTs);changed=true;}
-    });
-    // Local → Supabase: envia dados locais que o Supabase não tem
+    rows.forEach(r=>{sbKeys.add(r.chave);applyRemoteRow(r.chave,r.valor,r.updated_at);});
+    // Envia dados locais que o Supabase ainda não tem
     [..._DB_KEYS,'galv_checks_'+today()].forEach(k=>{
       if(!sbKeys.has(k)){const v=localStorage.getItem(k);if(v)fetch(_SB_URL+'/rest/v1/galvpanel_data',{method:'POST',headers:{..._SB_H,'Prefer':'resolution=merge-duplicates'},body:JSON.stringify({chave:k,valor:JSON.parse(v),updated_at:new Date().toISOString()})}).catch(()=>{});}
     });
-    showSync('Sincronizado ✓','ok');return changed;
-  }catch(e){showSync('Offline — dados locais','err');return false;}
+    showSync('Sincronizado ✓','ok');
+  }catch(e){showSync('Offline — dados locais','err');}
+}
+
+// ─── REALTIME (WebSocket Supabase) ───
+let _rtChannel=null;
+function startRealtime(){
+  if(_rtChannel)return; // já conectado
+  const wsUrl=_SB_URL.replace('https://','wss://')+'/realtime/v1/websocket?apikey='+_SB_KEY+'&vsn=1.0.0';
+  const ws=new WebSocket(wsUrl);
+  let _hbInterval=null;
+
+  ws.onopen=()=>{
+    // Autenticar e subscrever à tabela galvpanel_data
+    ws.send(JSON.stringify({topic:'realtime:public:galvpanel_data',event:'phx_join',payload:{},ref:'1'}));
+    _hbInterval=setInterval(()=>{ws.send(JSON.stringify({topic:'phoenix',event:'heartbeat',payload:{},ref:'hb'}));},25000);
+    showSync('Tempo real ativo','ok');
+  };
+
+  ws.onmessage=(e)=>{
+    try{
+      const msg=JSON.parse(e.data);
+      const pay=msg.payload;
+      if(!pay||!pay.data)return;
+      const rec=pay.data.record||pay.data.new;
+      if(!rec||!rec.chave)return;
+      const changed=applyRemoteRow(rec.chave,rec.valor,rec.updated_at);
+      if(changed)showSync('Atualizado por outro acesso','ok');
+    }catch{}
+  };
+
+  ws.onerror=()=>{showSync('Erro realtime','err');};
+  ws.onclose=()=>{
+    _rtChannel=null;
+    clearInterval(_hbInterval);
+    // Reconecta em 5s
+    setTimeout(startRealtime,5000);
+  };
+
+  _rtChannel=ws;
 }
 
 // ─── TAREFAS (Manhã/Tarde) ───
@@ -1774,6 +1825,7 @@ function dragEnd(){_dragId=null;_dragOver=null;document.querySelectorAll('.tanqu
 renderTarefas();
 renderReforcos();
 switchTab('tanques');
+syncFromSupabase().then(()=>startRealtime());
 
 </script>
 </body>
