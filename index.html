@@ -1582,7 +1582,7 @@ async function authSubmit(){
   const v=document.getElementById('auth-input').value;
   const _ae=document.getElementById('auth-err');if(_ae)_ae.textContent='';
   if(!v)return;
-  if(await sha256(v)===_SH){sessionStorage.setItem('galv_session','1');document.getElementById('auth-overlay').style.display='none';}
+  if(await sha256(v)===_SH){sessionStorage.setItem('galv_session','1');document.getElementById('auth-overlay').style.display='none';initApp();}
   else{document.getElementById('auth-err').textContent='Senha incorreta.';document.getElementById('auth-input').value='';document.getElementById('auth-input').focus();}
 }
 async function pinSubmit(){
@@ -1832,10 +1832,78 @@ function dragLeave(e){if(!e.currentTarget.contains(e.relatedTarget))e.currentTar
 function dragDrop(e,targetId){e.preventDefault();if(_dragId===targetId)return;const fi=tanques.findIndex(t=>t.id===_dragId),ti=tanques.findIndex(t=>t.id===targetId);if(fi<0||ti<0)return;const[m]=tanques.splice(fi,1);tanques.splice(ti,0,m);save('galv_tanques',tanques);renderTanqueList();}
 function dragEnd(){_dragId=null;_dragOver=null;document.querySelectorAll('.tanque-row').forEach(el=>{el.style.opacity='';el.style.borderTop='';}); }
 
+// ─── SYNC & REALTIME ───
+function showSync(msg,type){
+  const bar=document.getElementById('sync-bar'),dot=document.getElementById('sync-dot'),txt=document.getElementById('sync-msg');
+  if(!bar)return;bar.classList.add('show');
+  dot.className='sync-dot'+(type==='load'?' spin':type==='err'?' err':'');
+  txt.textContent=msg;
+  if(type==='ok'||type==='err')setTimeout(()=>bar.classList.remove('show'),3000);
+}
+function applyRemoteRow(chave,valor,updated_at){
+  const remoteTs=new Date(updated_at).getTime();
+  const localTs=parseInt(localStorage.getItem('_ts_'+chave)||'0');
+  if(remoteTs<=localTs)return false;
+  localStorage.setItem(chave,JSON.stringify(valor));
+  localStorage.setItem('_ts_'+chave,remoteTs);
+  if(chave==='galv_tanques'){tanques=valor||[];renderTanqueList();}
+  else if(chave==='galv_tarefas'){tarefas_cfg=valor||{};renderTarefas();}
+  else if(chave==='galv_processos'){processos=valor||[];renderProcessos();}
+  else if(chave==='galv_estoque'){estoque=valor||[];renderEstoque();}
+  else if(chave==='galv_reforcos'){reforcos=valor||[];renderReforcos();}
+  else if(chave==='galv_eventos'){eventos=valor||[];renderCalendario();}
+  else if(chave.startsWith('galv_checks_')){checks=valor||{};renderTarefas();}
+  return true;
+}
+async function syncFromSupabase(){
+  showSync('Sincronizando...','load');
+  try{
+    const res=await fetch(_SB_URL+'/rest/v1/galvpanel_data?select=chave,valor,updated_at',{headers:_SB_H});
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    const rows=await res.json();
+    const sbKeys=new Set();
+    rows.forEach(r=>{sbKeys.add(r.chave);applyRemoteRow(r.chave,r.valor,r.updated_at);});
+    [..._DB_KEYS,'galv_checks_'+today()].forEach(k=>{
+      if(!sbKeys.has(k)){const v=localStorage.getItem(k);if(v)fetch(_SB_URL+'/rest/v1/galvpanel_data',{method:'POST',headers:{..._SB_H,'Prefer':'resolution=merge-duplicates'},body:JSON.stringify({chave:k,valor:JSON.parse(v),updated_at:new Date().toISOString()})}).catch(()=>{});}
+    });
+    showSync('Sincronizado ✓','ok');
+  }catch(e){showSync('Offline — dados locais','err');}
+}
+let _rtWs=null;
+function startRealtime(){
+  if(_rtWs)return;
+  const wsUrl=_SB_URL.replace('https://','wss://')+'/realtime/v1/websocket?apikey='+_SB_KEY+'&vsn=1.0.0';
+  const ws=new WebSocket(wsUrl);
+  let hb=null;
+  ws.onopen=()=>{
+    ws.send(JSON.stringify({topic:'realtime:public:galvpanel_data',event:'phx_join',payload:{},ref:'1'}));
+    hb=setInterval(()=>{ws.send(JSON.stringify({topic:'phoenix',event:'heartbeat',payload:{},ref:'hb'}));},25000);
+    showSync('Tempo real ativo ✓','ok');
+  };
+  ws.onmessage=(e)=>{
+    try{
+      const msg=JSON.parse(e.data),pay=msg.payload;
+      if(!pay||!pay.data)return;
+      const rec=pay.data.record||pay.data.new;
+      if(!rec||!rec.chave)return;
+      if(applyRemoteRow(rec.chave,rec.valor,rec.updated_at))showSync('Atualizado em tempo real ✓','ok');
+    }catch{}
+  };
+  ws.onclose=()=>{_rtWs=null;clearInterval(hb);setTimeout(startRealtime,5000);};
+  ws.onerror=()=>showSync('Erro realtime','err');
+  _rtWs=ws;
+}
+
 // ─── INIT ───
-renderTarefas();
-renderReforcos();
-switchTab('tarefas');
+async function initApp(){
+  renderTarefas();
+  renderReforcos();
+  switchTab('tanques');
+  await syncFromSupabase();
+  startRealtime();
+}
+// Se já estava logado (sessão ativa), inicia direto
+if(sessionStorage.getItem('galv_session')==='1'){initApp();}
 
 </script>
 </body>
